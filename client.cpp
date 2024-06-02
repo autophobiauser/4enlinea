@@ -4,7 +4,6 @@
 #include <arpa/inet.h>
 #include <limits>
 
-#define PORT 7777
 #define MAX 80
 #define SA struct sockaddr
 
@@ -86,7 +85,15 @@ void playGame(int sockfd) {
     exit(0);  // Salir del programa cuando el juego termine
 }
 
-int main() {
+int main(int argc, char* argv[]) {
+    if (argc != 3) {
+        std::cerr << "Uso: " << argv[0] << " <IP> <puerto>" << std::endl;
+        return 1;
+    }
+
+    const char* ip = argv[1];
+    int port = atoi(argv[2]);
+
     int sockfd;
     struct sockaddr_in servaddr;
 
@@ -100,8 +107,8 @@ int main() {
     bzero(&servaddr, sizeof(servaddr));
 
     servaddr.sin_family = AF_INET;
-    servaddr.sin_addr.s_addr = inet_addr("127.0.0.1");
-    servaddr.sin_port = htons(PORT);
+    servaddr.sin_addr.s_addr = inet_addr(ip);
+    servaddr.sin_port = htons(port);
 
     if (connect(sockfd, (struct sockaddr*)&servaddr, sizeof(servaddr)) != 0) {
         std::cout << "La conexión con el servidor falló..." << std::endl;

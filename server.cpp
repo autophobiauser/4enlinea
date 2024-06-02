@@ -6,7 +6,6 @@
 #include <cstdlib> // Para srand() y rand()
 #include <ctime>   // Para time()
 
-#define PORT 7777
 #define MAX 80
 #define SA struct sockaddr
 
@@ -25,16 +24,16 @@ bool checkWin(char board[6][7], char token) {
     // horizontal, vertical y diagonal 
     for (int i = 0; i < 6; i++) {
         for (int j = 0; j < 7; j++) {
-            // Check horizontal
+            // Comprobar horizontal
             if (j + 3 < 7 && board[i][j] == token && board[i][j+1] == token && board[i][j+2] == token && board[i][j+3] == token)
                 return true;
-            // Check vertical
+            // Comprobar vertical
             if (i + 3 < 6 && board[i][j] == token && board[i+1][j] == token && board[i+2][j] == token && board[i+3][j] == token)
                 return true;
-            // Check diagonal 
+            // Comprobar diagonal 
             if (i + 3 < 6 && j + 3 < 7 && board[i][j] == token && board[i+1][j+1] == token && board[i+2][j+2] == token && board[i+3][j+3] == token)
                 return true;
-            // Check diagonal 
+            // Comprobar diagonal 
             if (i - 3 >= 0 && j + 3 < 7 && board[i][j] == token && board[i-1][j+1] == token && board[i-2][j+2] == token && board[i-3][j+3] == token)
                 return true;
         }
@@ -149,11 +148,21 @@ void* playGame(void* sockfd) {
         playerTurn = !playerTurn; // Cambiar el turno
     }
 
+    // Notificar al cliente que el juego ha terminado
+    std::strcpy(buffer, "GAME_OVER");
+    write(connfd, buffer, sizeof(buffer));
+
     close(connfd);
     return NULL;
 }
 
-int main() {
+int main(int argc, char* argv[]) {
+    if (argc != 2) {
+        std::cerr << "Uso: " << argv[0] << " <puerto>" << std::endl;
+        return 1;
+    }
+
+    int port = atoi(argv[1]);
     srand(time(0)); // Inicializa la semilla para los números aleatorios
 
     int sockfd, connfd, len;
@@ -170,7 +179,7 @@ int main() {
 
     servaddr.sin_family = AF_INET;
     servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
-    servaddr.sin_port = htons(PORT);
+    servaddr.sin_port = htons(port);
 
     if ((bind(sockfd, (SA*)&servaddr, sizeof(servaddr))) != 0) {
         std::cout << "Enlace con el socket fallido..." << std::endl;
