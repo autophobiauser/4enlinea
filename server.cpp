@@ -1,220 +1,207 @@
 #include <iostream>
-#include <sys/socket.h>
-#include <netinet/in.h>
-#include <unistd.h>
 #include <cstring>
+#include <unistd.h>
 #include <arpa/inet.h>
-#include <thread>
-#include <vector>
-#include <mutex>
-#include <cstdlib>
-#include <ctime>
+#include <pthread.h>
+#include <cstdlib> // Para srand() y rand()
+#include <ctime>   // Para time()
 
-const int PORT = 7777;  // Puerto en el que el servidor escuchará
-const int BUFFER_SIZE = 1024;  // Tamaño del buffer para los mensajes
-const int FILAS = 6;
-const int COLUMNAS = 7;
+#define PORT 7777
+#define MAX 80
+#define SA struct sockaddr
 
-std::mutex mtx;  // Mutex para proteger el acceso a la consola
-
-// Función para inicializar el tablero
-void inicializarTablero(char tablero[FILAS][COLUMNAS]) {
-    for (int i = 0; i < FILAS; ++i) {
-        for (int j = 0; j < COLUMNAS; ++j) {
-            tablero[i][j] = ' ';
-        }
-    }
-}
-
-// Función para imprimir el tablero
-void imprimirTablero(char tablero[FILAS][COLUMNAS]) {
-    for (int i = 0; i < FILAS; ++i) {
-        for (int j = 0; j < COLUMNAS; ++j) {
-            std::cout << tablero[i][j] << ' ';
+void printBoard(char board[6][7]) {
+    std::cout << "== Conecta 4 ==" << std::endl;
+    for (int i = 0; i < 6; i++) {
+        for (int j = 0; j < 7; j++) {
+            std::cout << (board[i][j] ? board[i][j] : '.') << " ";
         }
         std::cout << std::endl;
     }
-    for (int j = 0; j < COLUMNAS; ++j) {
-        std::cout << j + 1 << ' ';
-    }
-    std::cout << std::endl;
+    std::cout << "0 1 2 3 4 5 6" << std::endl;
 }
 
-// Función para verificar si hay un ganador
-bool hayGanador(char tablero[FILAS][COLUMNAS], char ficha) {
-    // Verificar horizontal
-    for (int i = 0; i < FILAS; ++i) {
-        for (int j = 0; j < COLUMNAS - 3; ++j) {
-            if (tablero[i][j] == ficha && tablero[i][j + 1] == ficha && tablero[i][j + 2] == ficha && tablero[i][j + 3] == ficha) {
+bool checkWin(char board[6][7], char token) {
+    // horizontal, vertical y diagonal 
+    for (int i = 0; i < 6; i++) {
+        for (int j = 0; j < 7; j++) {
+            // Check horizontal
+            if (j + 3 < 7 && board[i][j] == token && board[i][j+1] == token && board[i][j+2] == token && board[i][j+3] == token)
                 return true;
-            }
-        }
-    }
-    // Verificar vertical
-    for (int i = 0; i < FILAS - 3; ++i) {
-        for (int j = 0; j < COLUMNAS; ++j) {
-            if (tablero[i][j] == ficha && tablero[i + 1][j] == ficha && tablero[i + 2][j] == ficha && tablero[i + 3][j] == ficha) {
+            // Check vertical
+            if (i + 3 < 6 && board[i][j] == token && board[i+1][j] == token && board[i+2][j] == token && board[i+3][j] == token)
                 return true;
-            }
-        }
-    }
-    // Verificar diagonal positiva
-    for (int i = 0; i < FILAS - 3; ++i) {
-        for (int j = 0; j < COLUMNAS - 3; ++j) {
-            if (tablero[i][j] == ficha && tablero[i + 1][j + 1] == ficha && tablero[i + 2][j + 2] == ficha && tablero[i + 3][j + 3] == ficha) {
+            // Check diagonal 
+            if (i + 3 < 6 && j + 3 < 7 && board[i][j] == token && board[i+1][j+1] == token && board[i+2][j+2] == token && board[i+3][j+3] == token)
                 return true;
-            }
-        }
-    }
-    // Verificar diagonal negativa
-    for (int i = 3; i < FILAS; ++i) {
-        for (int j = 0; j < COLUMNAS - 3; ++j) {
-            if (tablero[i][j] == ficha && tablero[i - 1][j + 1] == ficha && tablero[i - 2][j + 2] == ficha && tablero[i - 3][j + 3] == ficha) {
+            // Check diagonal 
+            if (i - 3 >= 0 && j + 3 < 7 && board[i][j] == token && board[i-1][j+1] == token && board[i-2][j+2] == token && board[i-3][j+3] == token)
                 return true;
-            }
         }
     }
     return false;
 }
 
-// Función para realizar un movimiento
-bool realizarMovimiento(char tablero[FILAS][COLUMNAS], int columna, char ficha) {
-    if (columna < 0 || columna >= COLUMNAS || tablero[0][columna] != ' ') {
-        return false;
-    }
-    for (int i = FILAS - 1; i >= 0; --i) {
-        if (tablero[i][columna] == ' ') {
-            tablero[i][columna] = ficha;
-            break;
-        }
+bool checkDraw(char board[6][7]) {
+    for (int i = 0; i < 7; i++) {
+        if (board[0][i] == 0) return false;
     }
     return true;
 }
 
-// Función que maneja la comunicación con el cliente
-void manejarCliente(int clientSocket) {
-    char buffer[BUFFER_SIZE];
-    int bytesLeidos;
-    char tablero[FILAS][COLUMNAS];
-    inicializarTablero(tablero);
-    char fichaCliente = 'C';
-    char fichaServidor = 'S';
-    bool esTurnoCliente = rand() % 2 == 0;
+int getRandomMove(char board[6][7]) {
+    int col;
+    do {
+        col = rand() % 7; // Genera un número aleatorio entre 0 y 6
+    } while (board[0][col] != 0); // Asegura que la columna no esté llena
+    return col;
+}
 
-    // Enviar el estado inicial del tablero al cliente
-    std::string estadoTablero = "";
-    for (int i = 0; i < FILAS; ++i) {
-        for (int j = 0; j < COLUMNAS; ++j) {
-            estadoTablero += tablero[i][j];
-        }
+void* playGame(void* sockfd) {
+    int connfd = *((int*)sockfd);
+    free(sockfd);
+    char board[6][7];
+    bzero(board, sizeof(board));
+    char buffer[MAX];
+    char player = 'C';
+    char server = 'S';
+    bool gameOver = false;
+    int moves = 0; // Contador de fichas jugadas
+
+    // Determinar aleatoriamente quién comienza
+    bool playerTurn = rand() % 2 == 0;
+
+    if (playerTurn) {
+        std::cout << "El cliente comienza el juego." << std::endl;
+    } else {
+        std::cout << "El servidor comienza el juego." << std::endl;
     }
-    send(clientSocket, estadoTablero.c_str(), estadoTablero.size(), 0);
 
-    while (true) {
-        if (esTurnoCliente) {
-            // Esperar jugada del cliente
-            bytesLeidos = read(clientSocket, buffer, BUFFER_SIZE);
-            if (bytesLeidos <= 0) {
-                std::cerr << "Cliente desconectado" << std::endl;
-                break;
+    while (!gameOver) {
+        if (playerTurn) {
+            bzero(buffer, MAX);
+            std::memcpy(buffer, board, sizeof(board));
+            write(connfd, buffer, sizeof(buffer));
+
+            bzero(buffer, MAX);
+            read(connfd, buffer, sizeof(buffer));
+            int move = atoi(buffer);
+            if (move < 0 || move >= 7) continue;
+
+            for (int i = 5; i >= 0; i--) {
+                if (board[i][move] == 0) {
+                    board[i][move] = player;
+                    moves++; // Incrementar el contador de fichas jugadas
+                    break;
+                }
             }
-            buffer[bytesLeidos] = '\0';
-            int columna = atoi(buffer) - 1;
 
-            // Realizar el movimiento del cliente
-            if (!realizarMovimiento(tablero, columna, fichaCliente)) {
-                std::string mensajeError = "Movimiento inválido";
-                send(clientSocket, mensajeError.c_str(), mensajeError.size(), 0);
+            std::cout << "\nCliente hizo un movimiento en la columna: " << move << std::endl;
+            if (checkWin(board, player)) {
+                std::memcpy(buffer, board, sizeof(board));
+                write(connfd, buffer, sizeof(buffer));
+                std::strcpy(buffer, "WIN");
+                write(connfd, buffer, sizeof(buffer));
+                std::cout << "Cliente ha ganado." << std::endl;
+                gameOver = true;
                 continue;
             }
 
-            // Verificar si el cliente ha ganado
-            if (hayGanador(tablero, fichaCliente)) {
-                std::string mensajeGanador = "Cliente ha ganado";
-                send(clientSocket, mensajeGanador.c_str(), mensajeGanador.size(), 0);
-                break;
+            if (checkDraw(board) || moves >= 21) { // Verificar si se ha alcanzado el límite de 21 fichas
+                std::memcpy(buffer, board, sizeof(board));
+                write(connfd, buffer, sizeof(buffer));
+                std::strcpy(buffer, "DRAW");
+                write(connfd, buffer, sizeof(buffer));
+                std::cout << "El juego ha terminado en empate." << std::endl;
+                gameOver = true;
+                continue;
             }
         } else {
-            // Movimiento del servidor
-            int columna = rand() % COLUMNAS;
-            while (!realizarMovimiento(tablero, columna, fichaServidor)) {
-                columna = rand() % COLUMNAS;
+            int move = getRandomMove(board);
+            for (int i = 5; i >= 0; i--) {
+                if (board[i][move] == 0) {
+                    board[i][move] = server;
+                    moves++; // Incrementar el contador de fichas jugadas
+                    break;
+                }
             }
 
-            // Verificar si el servidor ha ganado
-            if (hayGanador(tablero, fichaServidor)) {
-                std::string mensajeGanador = "Servidor ha ganado";
-                send(clientSocket, mensajeGanador.c_str(), mensajeGanador.size(), 0);
-                break;
+            std::cout << "Servidor hizo un movimiento en la columna: " << move << std::endl;
+            if (checkWin(board, server)) {
+                std::memcpy(buffer, board, sizeof(board));
+                write(connfd, buffer, sizeof(buffer));
+                std::strcpy(buffer, "LOSE");
+                write(connfd, buffer, sizeof(buffer));
+                std::cout << "Servidor ha ganado." << std::endl;
+                gameOver = true;
+                continue;
+            } else if (checkDraw(board) || moves >= 21) { // Verificar si se ha alcanzado el límite de 21 fichas
+                std::memcpy(buffer, board, sizeof(board));
+                write(connfd, buffer, sizeof(buffer));
+                std::strcpy(buffer, "DRAW");
+                write(connfd, buffer, sizeof(buffer));
+                std::cout << "El juego ha terminado en empate." << std::endl;
+                gameOver = true;
+                continue;
             }
         }
 
-        // Enviar el estado del tablero al cliente
-        estadoTablero = "";
-        for (int i = 0; i < FILAS; ++i) {
-            for (int j = 0; j < COLUMNAS; ++j) {
-                estadoTablero += tablero[i][j];
-            }
-        }
-        send(clientSocket, estadoTablero.c_str(), estadoTablero.size(), 0);
-
-        // Cambiar el turno
-        esTurnoCliente = !esTurnoCliente;
+        playerTurn = !playerTurn; // Cambiar el turno
     }
 
-    close(clientSocket);
-    std::cout << "Cliente desconectado" << std::endl;
+    close(connfd);
+    return NULL;
 }
 
 int main() {
-    srand(time(0));  // Inicializar la semilla para números aleatorios
-    int serverSocket, clientSocket;
-    struct sockaddr_in serverAddr, clientAddr;
-    socklen_t addrLen = sizeof(clientAddr);
+    srand(time(0)); // Inicializa la semilla para los números aleatorios
 
-    // Crear el socket del servidor
-    serverSocket = socket(AF_INET, SOCK_STREAM, 0);
-    if (serverSocket == -1) {
-        std::cerr << "Error al crear el socket" << std::endl;
-        return 1;
+    int sockfd, connfd, len;
+    struct sockaddr_in servaddr, cli;
+
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd == -1) {
+        std::cout << "La creación del socket falló..." << std::endl;
+        exit(0);
+    } else {
+        std::cout << "Socket creado con éxito.." << std::endl;
+    }
+    bzero(&servaddr, sizeof(servaddr));
+
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_addr.s_addr = htonl(INADDR_ANY);
+    servaddr.sin_port = htons(PORT);
+
+    if ((bind(sockfd, (SA*)&servaddr, sizeof(servaddr))) != 0) {
+        std::cout << "Enlace con el socket fallido..." << std::endl;
+        exit(0);
+    } else {
+        std::cout << "Enlazado al socket con éxito.." << std::endl;
     }
 
-    // Configurar la dirección del servidor
-    serverAddr.sin_family = AF_INET;
-    serverAddr.sin_addr.s_addr = INADDR_ANY;
-    serverAddr.sin_port = htons(PORT);
-
-    // Enlazar el socket a la dirección y puerto
-    if (bind(serverSocket, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) == -1) {
-        std::cerr << "Error al enlazar el socket" << std::endl;
-        close(serverSocket);
-        return 1;
+    if ((listen(sockfd, 5)) != 0) {
+        std::cout << "Fallo al escuchar..." << std::endl;
+        exit(0);
+    } else {
+        std::cout << "Servidor escuchando.." << std::endl;
     }
+    len = sizeof(cli);
 
-    // Escuchar conexiones entrantes
-    if (listen(serverSocket, 5) == -1) {
-        std::cerr << "Error al escuchar en el socket" << std::endl;
-        close(serverSocket);
-        return 1;
-    }
-
-    std::cout << "Servidor escuchando en el puerto " << PORT << std::endl;
-
-    // Ciclo para aceptar y manejar conexiones de clientes
     while (true) {
-        clientSocket = accept(serverSocket, (struct sockaddr*)&clientAddr, &addrLen);
-        if (clientSocket == -1) {
-            std::cerr << "Error al aceptar la conexión" << std::endl;
-            continue;
+        connfd = accept(sockfd, (SA*)&cli, (socklen_t*)&len);
+        if (connfd < 0) {
+            std::cout << "La aceptación del cliente falló..." << std::endl;
+            exit(0);
+        } else {
+            std::cout << "Cliente aceptado.." << std::endl;
         }
 
-        std::cout << "Nueva conexión desde " << inet_ntoa(clientAddr.sin_addr) << ":" << ntohs(clientAddr.sin_port) << std::endl;
-
-        // Crear un nuevo hilo para manejar al cliente
-        std::thread(manejarCliente, clientSocket).detach();
+        pthread_t thread_id;
+        int* connfd_ptr = (int*)malloc(sizeof(int));
+        *connfd_ptr = connfd;
+        pthread_create(&thread_id, NULL, playGame, connfd_ptr);
     }
 
-    // Cerrar el socket del servidor
-    close(serverSocket);
+    close(sockfd);
     return 0;
 }

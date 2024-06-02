@@ -1,104 +1,116 @@
 #include <iostream>
-#include <sys/socket.h>
-#include <arpa/inet.h>
-#include <unistd.h>
 #include <cstring>
+#include <unistd.h>
+#include <arpa/inet.h>
+#include <limits>
 
-const int BUFFER_SIZE = 1024;  // Tamaño del buffer para los mensajes
-const int FILAS = 6;
-const int COLUMNAS = 7;
+#define PORT 7777
+#define MAX 80
+#define SA struct sockaddr
 
-// Función para imprimir el tablero
-void imprimirTablero(char tablero[FILAS][COLUMNAS]) {
-    for (int i = 0; i < FILAS; ++i) {
-        for (int j = 0; j < COLUMNAS; ++j) {
-            std::cout << tablero[i][j] << ' ';
+void printBoard(char board[6][7]) {
+    std::cout << "== Conecta 4 ==" << std::endl;
+    for (int i = 0; i < 6; i++) {
+        for (int j = 0; j < 7; j++) {
+            std::cout << (board[i][j] ? board[i][j] : '.') << " ";
         }
         std::cout << std::endl;
     }
-    for (int j = 0; j < COLUMNAS; ++j) {
-        std::cout << j + 1 << ' ';
-    }
-    std::cout << std::endl;
+    std::cout << "0 1 2 3 4 5 6" << std::endl;
 }
 
-int main(int argc, char *argv[]) {
-    if (argc != 3) {
-        std::cerr << "Uso: " << argv[0] << " <ip_servidor> <puerto_servidor>" << std::endl;
-        return 1;
-    }
+bool isColumnFull(char board[6][7], int col) {
+    return board[0][col] != 0;
+}
 
-    const char *ipServidor = argv[1];
-    int puertoServidor = std::stoi(argv[2]);
+void playGame(int sockfd) {
+    char board[6][7] = {};
+    char buffer[MAX];
+    int n;
+    bool gameOver = false;
+    int moves = 0; // Contador de fichas jugadas
 
-    int clientSocket;
-    struct sockaddr_in serverAddr;
-    char buffer[BUFFER_SIZE];
-
-    // Crear el socket del cliente
-    clientSocket = socket(AF_INET, SOCK_STREAM, 0);
-    if (clientSocket == -1) {
-        std::cerr << "Error al crear el socket" << std::endl;
-        return 1;
-    }
-
-    // Configurar la dirección del servidor
-    serverAddr.sin_family = AF_INET;
-    serverAddr.sin_port = htons(puertoServidor);
-
-    // Convertir la dirección IP
-    if (inet_pton(AF_INET, ipServidor, &serverAddr.sin_addr) <= 0) {
-        std::cerr << "Dirección no válida o no soportada" << std::endl;
-        close(clientSocket);
-        return 1;
-    }
-
-    // Conectar al servidor
-    if (connect(clientSocket, (struct sockaddr*)&serverAddr, sizeof(serverAddr)) == -1) {
-        std::cerr << "Error al conectar con el servidor" << std::endl;
-        close(clientSocket);
-        return 1;
-    }
-
-    std::cout << "Conectado al servidor" << std::endl;
-
-    // Inicializar el tablero
-    char tablero[FILAS][COLUMNAS];
     while (true) {
-        // Leer el estado del tablero desde el servidor
-        int bytesLeidos = read(clientSocket, buffer, BUFFER_SIZE);
-        if (bytesLeidos <= 0) {
-            std::cerr << "Servidor desconectado" << std::endl;
+        bzero(buffer, sizeof(buffer));
+        read(sockfd, buffer, sizeof(buffer));
+
+        if (strcmp(buffer, "WIN") == 0) {
+            std::cout << "¡Has ganado!" << std::endl;
+            gameOver = true;
+        } else if (strcmp(buffer, "LOSE") == 0) {
+            std::cout << "¡Has perdido!" << std::endl;
+            gameOver = true;
+        } else if (strcmp(buffer, "DRAW") == 0) {
+            std::cout << "¡El juego ha terminado en empate!" << std::endl;
+            gameOver = true;
+        } else {
+            std::memcpy(board, buffer, sizeof(board));
+            printBoard(board);
+        }
+
+        if (gameOver) {
             break;
         }
-        buffer[bytesLeidos] = '\0';
 
-        // Actualizar el tablero
-        int k = 0;
-        for (int i = 0; i < FILAS; ++i) {
-            for (int j = 0; j < COLUMNAS; ++j) {
-                tablero[i][j] = buffer[k++];
+        bool validMove = false;
+        while (!validMove) {
+            std::cout << "Ingresa la columna (0-6) donde deseas colocar tu ficha: ";
+            std::cin >> n;
+
+            if (std::cin.fail() || n < 0 || n > 6) {
+                std::cin.clear(); // Limpiar el flag de error
+                std::cin.ignore(std::numeric_limits<std::streamsize>::max(), '\n'); // Ignorar la entrada inválida
+                std::cout << "Número de columna inválido. Por favor, inténtelo de nuevo." << std::endl;
+            } else if (isColumnFull(board, n)) {
+                std::cout << "La columna está llena. Por favor, elige otra columna." << std::endl;
+            } else {
+                validMove = true;
             }
         }
 
-        // Imprimir el tablero
-        imprimirTablero(tablero);
+        bzero(buffer, MAX);
+        sprintf(buffer, "%d", n);
+        write(sockfd, buffer, sizeof(buffer));
+        moves++; // Incrementar el contador de fichas jugadas
 
-        // Leer el mensaje del servidor
-        if (bytesLeidos < BUFFER_SIZE) {
-            std::cout << buffer << std::endl;
-            if (strcmp(buffer, "Cliente ha ganado") == 0 || strcmp(buffer, "Servidor ha ganado") == 0) {
-                break;
-            }
+        if (moves >= 21) { // Verificar si se ha alcanzado el límite de 21 fichas
+            std::cout << "Se ha alcanzado el límite de 21 fichas. El juego termina en empate." << std::endl;
+            bzero(buffer, MAX);
+            std::strcpy(buffer, "DRAW");
+            write(sockfd, buffer, sizeof(buffer));
+            break;
         }
-
-        // Enviar el movimiento al servidor
-        std::cout << "Ingrese una columna (1-7): ";
-        std::cin.getline(buffer, BUFFER_SIZE);
-        send(clientSocket, buffer, strlen(buffer), 0);
     }
 
-    // Cerrar el socket del cliente
-    close(clientSocket);
-    return 0;
+    close(sockfd);  // Cerrar el socket cuando el juego termine
+    exit(0);  // Salir del programa cuando el juego termine
+}
+
+int main() {
+    int sockfd;
+    struct sockaddr_in servaddr;
+
+    sockfd = socket(AF_INET, SOCK_STREAM, 0);
+    if (sockfd == -1) {
+        std::cout << "La creación del socket falló..." << std::endl;
+        exit(0);
+    } else {
+        std::cout << "Socket creado con éxito.." << std::endl;
+    }
+    bzero(&servaddr, sizeof(servaddr));
+
+    servaddr.sin_family = AF_INET;
+    servaddr.sin_addr.s_addr = inet_addr("127.0.0.1");
+    servaddr.sin_port = htons(PORT);
+
+    if (connect(sockfd, (struct sockaddr*)&servaddr, sizeof(servaddr)) != 0) {
+        std::cout << "La conexión con el servidor falló..." << std::endl;
+        exit(0);
+    } else {
+        std::cout << "Conectado al servidor.." << std::endl;
+    }
+
+    playGame(sockfd);
+
+    return 0;  // Salir del programa cuando el juego termine
 }
