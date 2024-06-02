@@ -78,6 +78,7 @@ El cliente se conectará al servidor y empezará la partida.
 ## 📝 Observaciones 📝
 
 - Al iniciar la partida, el jugador que parte es seleccionado al azar.
+- Se permite más de una conexión al servidor al mismo tiempo.
 - Es posible que al cliente, habiendo lanzado una ficha ganadora, le siga apareciendo el tablero para lanzar una "ficha extra". Sin embargo esta no se jugará, aparecerá el mensaje de que ha ganado y la partida terminará.
 - Para comprobar el empate, el total de las fichas son 21 entre ambos jugadores.
 
